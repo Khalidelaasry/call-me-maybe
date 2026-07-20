@@ -1,0 +1,6 @@
+.venv
+data/output/
+note.txt
+__pycache__
+.vscode/
+.github/
