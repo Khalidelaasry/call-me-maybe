@@ -1,4 +1,6 @@
 .venv
+.cache/
+.tmp/
 data/output/
 note.txt
 __pycache__

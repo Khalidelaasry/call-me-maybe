@@ -1,16 +1,32 @@
+PROJECT_DIR := $(shell pwd -P)
+CACHE_DIR := $(PROJECT_DIR)/.cache/uv
+TMP_DIR := $(PROJECT_DIR)/.tmp
+HF_CACHE_DIR ?= /tmp/call-me-maybe-hf
+
+export UV_CACHE_DIR := $(CACHE_DIR)
+export TMPDIR := $(TMP_DIR)
+export HF_HOME := $(HF_CACHE_DIR)
+
 PYTHON = uv run python3
 MAIN = -m src
 SRC = src/
 
-all: install
+all: build
 
 uv.lock: pyproject.toml Makefile
 	@echo "Installing dependencies using uv..."
+	@mkdir -p "$(CACHE_DIR)" "$(TMP_DIR)"
 	uv sync
 	@touch uv.lock
 
 install: uv.lock
+	@mkdir -p "$(CACHE_DIR)" "$(TMP_DIR)" "$(HF_CACHE_DIR)"
 	uv sync
+
+build:
+	@echo "Building distribution packages..."
+	@mkdir -p "$(CACHE_DIR)" "$(TMP_DIR)" "$(HF_CACHE_DIR)"
+	uv build
 
 run: install
 	@echo "Running the program..."
@@ -43,4 +59,4 @@ clean:
 	       data/output
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
-.PHONY: all install run debug lint lint-strict clean profile
+.PHONY: all install build run debug lint lint-strict clean profile

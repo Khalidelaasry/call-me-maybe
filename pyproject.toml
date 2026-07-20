@@ -29,6 +29,14 @@ strict = true
 ignore_missing_imports = true
 exclude = ["llm_sdk"]
 
+[tool.hatch.build]
+exclude = [
+    "/.venv",
+    "/.cache",
+    "/.tmp",
+    "/dist",
+]
+
 [[tool.mypy.overrides]]
 module = "llm_sdk.*"
 ignore_errors = true
