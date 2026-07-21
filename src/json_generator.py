@@ -148,6 +148,11 @@ class TwoStepJsonGenerator(BaseModel):
             "Do NOT calculate or reverse anything.",
             "ONLY extract the exact literal values from the text.\n",
             "For string parameters, preserve the EXACT case from the input.\n",
+            "For an explicitly quoted empty string, emit an empty JSON "
+            "string (\"\"), never a placeholder.\n",
+            "For numbers, preserve a leading '-' and every decimal digit. "
+            "A leading '+' means a positive JSON number (without '+'). "
+            "Keep values in their original parameter order.\n",
             "<|im_end|>\n",
             f"<|im_start|>user\n{self.user_prompt}<|im_end|>\n",
             "<|im_start|>assistant\n",

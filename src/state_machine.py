@@ -20,6 +20,80 @@ _COMPLETE_NUMBER_PREFIX_RE = re.compile(
 _NUMBER_DELIMITERS = ',}]\n'
 
 
+def is_partial_json_string_content(candidate: str) -> bool:
+    """Check whether text can still form the contents of a JSON string.
+
+    The opening and closing quotes are handled by :class:`StateParseString`.
+    This recognises JSON escapes while allowing an unfinished escape at the
+    end of a token, so multi-token escape sequences remain possible.
+    """
+    index = 0
+    while index < len(candidate):
+        character = candidate[index]
+        if character == '"' or ord(character) < 0x20:
+            return False
+        if character != '\\':
+            index += 1
+            continue
+
+        index += 1
+        if index == len(candidate):
+            return True
+
+        escape = candidate[index]
+        if escape in '"\\/bfnrt':
+            index += 1
+            continue
+        if escape != 'u':
+            return False
+
+        hex_start = index + 1
+        hex_end = min(hex_start + 4, len(candidate))
+        if any(char not in '0123456789abcdefABCDEF'
+               for char in candidate[hex_start:hex_end]):
+            return False
+        if len(candidate) - hex_start < 4:
+            return True
+        index = hex_start + 4
+
+    return True
+
+
+def is_complete_json_string_content(candidate: str) -> bool:
+    """Check whether text is valid completed JSON string content.
+
+    Unlike :func:`is_partial_json_string_content`, this rejects a trailing
+    backslash and a ``\\u`` escape with fewer than four hexadecimal digits.
+    Those forms are useful while generating content but cannot precede the
+    closing quote of a JSON string.
+    """
+    index = 0
+    while index < len(candidate):
+        character = candidate[index]
+        if character == '"' or ord(character) < 0x20:
+            return False
+        if character != '\\':
+            index += 1
+            continue
+
+        index += 1
+        if index == len(candidate):
+            return False
+
+        escape = candidate[index]
+        if escape in '"\\/bfnrt':
+            index += 1
+            continue
+        if escape != 'u' or index + 4 >= len(candidate):
+            return False
+        if any(char not in '0123456789abcdefABCDEF'
+               for char in candidate[index + 1:index + 5]):
+            return False
+        index += 5
+
+    return True
+
+
 def is_partial_json_number(candidate: str) -> bool:
     """Check whether text is a syntactically valid partial JSON number.
 
@@ -263,7 +337,7 @@ class StateParseNumber(State):
 
 
 class StateParseString(State):
-    """Parse a JSON string - simplified version."""
+    """Parse a JSON string while preserving JSON escaping rules."""
 
     next_state: State | None = Field(default=None)
     has_opened: bool = Field(default=False)
@@ -281,8 +355,18 @@ class StateParseString(State):
         if not self.has_opened:
             return vocab_index.filter_vocab.exact_quote_tokens
 
-        return (vocab_index.filter_vocab.string_content_tokens
-                | vocab_index.filter_vocab.string_closer_tokens)
+        valid_content = {
+            token_id
+            for token_id in vocab_index.filter_vocab.string_content_tokens
+            if is_partial_json_string_content(
+                self.buffer + vocab_index.clean_vocab[token_id])
+        }
+        # A string may only close with a standalone quote.  Allowing tokens
+        # that merely contain a quote can emit unvalidated text after it and
+        # leave the enclosing JSON object incomplete.
+        if is_complete_json_string_content(self.buffer):
+            valid_content |= vocab_index.filter_vocab.exact_quote_tokens
+        return valid_content
 
     def transition(self, token_str: str) -> tuple["State", str]:
         """Consume string token text and exit when a closing quote appears.
@@ -296,13 +380,11 @@ class StateParseString(State):
             continues.
         """
         if not self.has_opened:
-            self.has_opened = '"' in token_str
+            self.has_opened = token_str == '"'
             return self, ""
 
-        quote_pos = token_str.find('"')
-        if quote_pos == -1:
+        if token_str != '"':
             self.buffer += token_str
             return self, ""
 
-        overflow = token_str[quote_pos + 1:]
-        return self.next_state or StateTerminal(), overflow
+        return self.next_state or StateTerminal(), ""

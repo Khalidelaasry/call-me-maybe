@@ -19,7 +19,7 @@ class ConstrainedDecoder(BaseModel):
         Args:
             prompt: Initial text to prime the generation.
             state: Node state that defines valid token sequences.
-            max_tokens: Maximum number of tokens to generate.
+            max_tokens: Maximum number of model-selected tokens to generate.
 
         Returns:
             Generated text that adheres to the constraints
@@ -33,14 +33,19 @@ class ConstrainedDecoder(BaseModel):
         output_chunks: list[str] = []
         node: State = state
 
-        for _ in range(max_tokens):
-            if isinstance(node, StateTerminal):
-                break
-
+        generated_tokens = 0
+        while not isinstance(node, StateTerminal):
             if isinstance(node, StateExpectLiteral):
                 node = self._flush_literal(node, context_ids, output_chunks)
-            else:
-                node = self._advance_with_llm(node, context_ids, output_chunks)
+                continue
+
+            if generated_tokens >= max_tokens:
+                raise ValueError(
+                    "Constrained generation ended before reaching a complete "
+                    "JSON state.")
+
+            node = self._advance_with_llm(node, context_ids, output_chunks)
+            generated_tokens += 1
 
         return "".join(output_chunks)
 

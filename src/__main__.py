@@ -119,15 +119,18 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
 
 
 def main() -> None:
-    started_at = time.time()
+    try:
+        started_at = time.time()
 
-    output_path, functions_def, tests = parse_arguments_and_load_data()
-    assistant = init_ai()
-    results = process_all_prompts(tests, functions_def, assistant)
-    save_results(results, output_path)
+        output_path, functions_def, tests = parse_arguments_and_load_data()
+        assistant = init_ai()
+        results = process_all_prompts(tests, functions_def, assistant)
+        save_results(results, output_path)
 
-    elapsed = time.time() - started_at
-    print(f"\nTotal execution time: {elapsed:.2f} seconds.")
+        elapsed = time.time() - started_at
+        print(f"\nTotal execution time: {elapsed:.2f} seconds.")
+    except KeyboardInterrupt:
+        print("\nInterrupted. Goodbye.")
 
 
 if __name__ == "__main__":

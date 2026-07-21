@@ -119,10 +119,13 @@ def _run_repl(
 
 def main() -> None:
     """Entry point: load functions, init the model once, then run the REPL."""
-    args = _parse_args()
-    functions_def = _load_functions(args.functions_definition)
-    assistant = init_ai()
-    _run_repl(functions_def, assistant)
+    try:
+        args = _parse_args()
+        functions_def = _load_functions(args.functions_definition)
+        assistant = init_ai()
+        _run_repl(functions_def, assistant)
+    except KeyboardInterrupt:
+        print("\nInterrupted. Goodbye.")
 
 
 if __name__ == "__main__":
