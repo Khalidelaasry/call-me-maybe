@@ -1,3 +1,5 @@
+"""Build a decoded vocabulary index used to filter candidate tokens."""
+
 import json
 import re
 import sys
@@ -9,6 +11,7 @@ _QUOTE_CHAR = '"'
 
 
 class StrictVocabFilter(BaseModel):
+    """Classify vocabulary tokens useful for JSON value generation."""
 
     numeric_tokens: set[int] = Field(default_factory=set)
     string_content_tokens: set[int] = Field(default_factory=set)
@@ -18,6 +21,7 @@ class StrictVocabFilter(BaseModel):
     @classmethod
     def from_clean_vocab(
             cls, clean_vocab: dict[int, str]) -> "StrictVocabFilter":
+        """Create classification buckets from decoded vocabulary entries."""
         buckets = cls()
 
         for token_id, token_str in clean_vocab.items():
@@ -28,6 +32,7 @@ class StrictVocabFilter(BaseModel):
         return buckets
 
     def _classify(self, token_id: int, token_str: str) -> None:
+        """Add one token to each applicable JSON-generation bucket."""
         if _NUMERIC_TOKEN_PATTERN.match(token_str):
             self.numeric_tokens.add(token_id)
 
@@ -41,6 +46,7 @@ class StrictVocabFilter(BaseModel):
 
 
 class VocabIndex(BaseModel):
+    """Expose decoded token text and cached literal-prefix lookups."""
 
     clean_vocab: dict[int, str]
     filter_vocab: StrictVocabFilter
@@ -48,6 +54,7 @@ class VocabIndex(BaseModel):
 
     @classmethod
     def from_model(cls, model: Any) -> "VocabIndex":
+        """Load the SDK vocabulary and decode each available token."""
         vocab_path = model.get_path_to_vocab_file()
         raw_vocabulary = cls._read_raw_vocab(vocab_path)
 
@@ -62,6 +69,7 @@ class VocabIndex(BaseModel):
 
     @staticmethod
     def _read_raw_vocab(vocab_path: str) -> dict[str, int]:
+        """Read the tokenizer vocabulary JSON file from disk."""
         try:
             with open(vocab_path, 'r', encoding='utf-8') as vocab_file:
                 raw_vocabulary: dict[str, int] = json.load(vocab_file)
@@ -76,12 +84,14 @@ class VocabIndex(BaseModel):
     @staticmethod
     def _decode_all_tokens(
             model: Any, raw_vocabulary: dict[str, int]) -> dict[int, str]:
+        """Decode every vocabulary ID through the SDK public API."""
         return {
             token_id: model.decode([token_id])
             for token_id in raw_vocabulary.values()
         }
 
     def get_literal_matches(self, remainder: str) -> set[int]:
+        """Return token IDs that can extend or complete a literal prefix."""
         cached = self.literal_cache.get(remainder)
         if cached is None:
             cached = set(self._find_literal_matches(remainder))
@@ -89,6 +99,7 @@ class VocabIndex(BaseModel):
         return cached
 
     def _find_literal_matches(self, remainder: str) -> Iterable[int]:
+        """Yield uncached vocabulary IDs compatible with a literal prefix."""
         for token_id, token_str in self.clean_vocab.items():
             if remainder.startswith(token_str) or token_str.startswith(
                     remainder):

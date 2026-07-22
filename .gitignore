@@ -2,6 +2,7 @@
 .cache/
 .tmp/
 data/output/
+*.pyc
 note.txt
 __pycache__
 .vscode/

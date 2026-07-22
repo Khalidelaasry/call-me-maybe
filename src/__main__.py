@@ -1,3 +1,5 @@
+"""Command-line entry point for the constrained function-calling tool."""
+
 import sys
 import json
 import time
@@ -9,13 +11,16 @@ from src.data_loader import parse_arguments_and_load_data
 from src.functions_validator import (
     FunctionCallResult,
     FunctionDefinition,
-    FunctionCallingTest)
+    FunctionCallingTest,
+    validate_function_call,
+)
 from src.vocabulary import VocabIndex
 from src.constrained_decoder import ConstrainedDecoder
 from src.json_generator import TwoStepJsonGenerator, GenerationJsonError
 
 
 def init_ai() -> ConstrainedDecoder:
+    """Load the LLM and prepare its vocabulary index."""
     print("Initializing the LLM model and vocabulary...")
     try:
         model = Small_LLM_Model()
@@ -30,12 +35,12 @@ def process_all_prompts(
         calling_tests: list[FunctionCallingTest],
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> list[dict[str, Any]]:
+    """Generate one validated result for every supplied prompt."""
     results: list[dict[str, Any]] = []
 
     for test_case in calling_tests:
         outcome = _run_one_prompt(test_case, functions_def, assistant)
-        if outcome is not None:
-            results.append(outcome)
+        results.append(outcome)
 
     return results
 
@@ -43,7 +48,8 @@ def process_all_prompts(
 def _run_one_prompt(
         test_case: FunctionCallingTest,
         functions_def: list[FunctionDefinition],
-        assistant: ConstrainedDecoder) -> dict[str, Any] | None:
+        assistant: ConstrainedDecoder) -> dict[str, Any]:
+    """Generate and validate a result without silently dropping failures."""
     print(f"Processing: '{test_case.prompt}'...")
 
     try:
@@ -53,24 +59,21 @@ def _run_one_prompt(
             assistant=assistant
         )
         generated = generator.generate()
-        validated = FunctionCallResult.model_validate(generated)
+        selected = next(
+            fn for fn in functions_def if fn.name == generated["name"])
+        validated = validate_function_call(
+            FunctionCallResult.model_validate(generated), selected)
 
         print(f"  ✓ Success: {generated.get('name')} "
               f"{generated.get('parameters')}")
         return validated.model_dump()
 
     except (ValueError, GenerationJsonError) as exc:
-        print(f"  ✗ Generation error: {exc}")
-    except Exception as exc:
-        print(f"  ✗ Unexpected error: {exc}")
-
-    return None
+        raise GenerationJsonError(f"Generation failed: {exc}") from exc
 
 
 def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
-    if not results:
-        print("\nNo results generated. File not saved.")
-        return
+    """Write all validated results as one JSON array, including empties."""
 
     try:
         with output_path.open('w') as output_file:
@@ -81,6 +84,7 @@ def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
 
 
 def main() -> None:
+    """Run the command-line application and report user-friendly failures."""
     try:
         started_at = time.time()
 
@@ -93,6 +97,8 @@ def main() -> None:
         print(f"\nTotal execution time: {elapsed:.2f} seconds.")
     except KeyboardInterrupt:
         print("\nInterrupted. Goodbye.")
+    except (GenerationJsonError, ValueError) as exc:
+        sys.exit(f"ERROR: {exc}")
 
 
 if __name__ == "__main__":

@@ -1,3 +1,5 @@
+"""Generate schema-constrained function calls with the supplied LLM."""
+
 import json
 from typing import Any
 from pydantic import BaseModel, ConfigDict
@@ -10,17 +12,20 @@ from src.state_machine import (
     StateExpectLiteral,
     StateBranch,
     StateParseString,
-    StateParseNumber
+    StateParseNumber,
 )
 
 _NUMERIC_PARAMETER_TYPES = ("number", "integer")
 
 
 class GenerationJsonError(Exception):
+    """Report JSON generation or schema-construction failures."""
+
     pass
 
 
 class TwoStepJsonGenerator(BaseModel):
+    """Select a function, then generate exactly its JSON arguments."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
@@ -28,6 +33,7 @@ class TwoStepJsonGenerator(BaseModel):
     assistant: ConstrainedDecoder
 
     def generate(self) -> dict[str, Any]:
+        """Generate one complete output object for the user prompt."""
         function_name = self._select_function_name()
         function_schema = self._lookup_function(function_name)
         arguments = self._extract_arguments(function_schema)
@@ -38,8 +44,8 @@ class TwoStepJsonGenerator(BaseModel):
             "parameters": arguments,
         }
 
-
     def _select_function_name(self) -> str:
+        """Generate a function name restricted to the available choices."""
         return self.assistant.generate(
             prompt=self._function_selection_prompt(),
             state=self._function_selection_state(),
@@ -47,6 +53,7 @@ class TwoStepJsonGenerator(BaseModel):
         )
 
     def _function_selection_prompt(self) -> str:
+        """Build the LLM prompt used to choose the function."""
         header = "<|im_start|>system\nChoose the exact function name.\n" \
                  "Functions:\n"
         listing = "".join(
@@ -60,13 +67,14 @@ class TwoStepJsonGenerator(BaseModel):
         return header + listing + footer
 
     def _function_selection_state(self) -> State:
+        """Create a state that permits only declared function names."""
         return StateBranch(choices={
             fn.name: StateTerminal() for fn in self.functions_definition
         })
 
-
     def _extract_arguments(
             self, function_schema: FunctionDefinition) -> dict[str, Any]:
+        """Generate, parse, and normalize the selected function arguments."""
         raw_json_text = self.assistant.generate(
             prompt=self._argument_extraction_prompt(function_schema),
             state=self._argument_extraction_state(function_schema),
@@ -78,6 +86,7 @@ class TwoStepJsonGenerator(BaseModel):
 
     def _argument_extraction_prompt(
             self, function_schema: FunctionDefinition) -> str:
+        """Build the extraction prompt for one known function schema."""
         params_info = ", ".join(
             f"'{param_name}' ({param_schema.type})"
             for param_name, param_schema in function_schema.parameters.items()
@@ -105,6 +114,7 @@ class TwoStepJsonGenerator(BaseModel):
 
     def _argument_extraction_state(
             self, function_schema: FunctionDefinition) -> State:
+        """Create the state machine for a JSON arguments object."""
         param_items = list(function_schema.parameters.items())
 
         if not param_items:
@@ -121,6 +131,7 @@ class TwoStepJsonGenerator(BaseModel):
             param_items: list[tuple[str, ParameterModel]],
             index: int,
             tail_state: State) -> State:
+        """Recursively create states for parameters in definition order."""
         param_name, param_schema = param_items[index]
 
         is_last = index + 1 == len(param_items)
@@ -140,12 +151,23 @@ class TwoStepJsonGenerator(BaseModel):
     @staticmethod
     def _value_state_for(
             param_schema: ParameterModel, next_state: State) -> State:
+        """Return the constrained value state for one declared JSON type."""
         if param_schema.type in _NUMERIC_PARAMETER_TYPES:
             return StateParseNumber(next_state=next_state)
-        return StateParseString(next_state=next_state)
-
+        if param_schema.type == "string":
+            return StateParseString(next_state=next_state)
+        if param_schema.type == "boolean":
+            return StateBranch(choices={
+                "true": next_state,
+                "false": next_state,
+            })
+        if param_schema.type == "null":
+            return StateBranch(choices={"null": next_state})
+        raise GenerationJsonError(
+            f"Unsupported parameter type '{param_schema.type}'.")
 
     def _lookup_function(self, function_name: str) -> FunctionDefinition:
+        """Find the schema for a model-selected function name."""
         for function_schema in self.functions_definition:
             if function_schema.name == function_name:
                 return function_schema
@@ -153,20 +175,25 @@ class TwoStepJsonGenerator(BaseModel):
 
     @staticmethod
     def _parse_json_object(json_text: str) -> dict[str, Any]:
+        """Parse generated text and require a JSON object."""
         if not json_text.strip():
             return {}
 
         try:
             parsed = json.loads(json_text)
-        except json.JSONDecodeError:
-            raise GenerationJsonError(f"Invalid JSON: {json_text}")
+        except json.JSONDecodeError as exc:
+            raise GenerationJsonError(f"Invalid JSON: {json_text}") from exc
 
-        return parsed if isinstance(parsed, dict) else {}
+        if not isinstance(parsed, dict):
+            raise GenerationJsonError(
+                "Generated arguments are not a JSON object.")
+        return parsed
 
     @staticmethod
     def _coerce_numeric_arguments(
             arguments: dict[str, Any],
             function_schema: FunctionDefinition) -> dict[str, Any]:
+        """Convert JSON number values to the declared Python number types."""
         for param_name, param_schema in function_schema.parameters.items():
             if param_name not in arguments:
                 continue
@@ -177,7 +204,8 @@ class TwoStepJsonGenerator(BaseModel):
                     arguments[param_name] = float(raw_value)
                 elif param_schema.type == "integer":
                     arguments[param_name] = int(float(raw_value))
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as exc:
+                message = f"Parameter '{param_name}' is not a valid number."
+                raise GenerationJsonError(message) from exc
 
         return arguments

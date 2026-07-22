@@ -1,3 +1,5 @@
+"""Token-by-token constrained decoder backed by the provided LLM SDK."""
+
 import numpy as np
 from typing import Any
 from pydantic import BaseModel, ConfigDict
@@ -7,6 +9,7 @@ from src.state_machine import State, StateTerminal, StateExpectLiteral
 
 
 class ConstrainedDecoder(BaseModel):
+    """Generate text while allowing only tokens accepted by a state machine."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     llm: Small_LLM_Model
@@ -14,6 +17,7 @@ class ConstrainedDecoder(BaseModel):
 
     def generate(
             self, prompt: str, state: State, max_tokens: int = 150) -> str:
+        """Generate a complete constrained response from one prompt."""
         context_ids = self.llm.encode(prompt)[0].tolist()
         pending_ids = context_ids.copy()
         past_key_values: Any = None
@@ -45,6 +49,7 @@ class ConstrainedDecoder(BaseModel):
             context_ids: list[int],
             pending_ids: list[int],
             output_chunks: list[str]) -> State:
+        """Append a fixed JSON literal without asking the LLM to choose it."""
         missing_text = node.expected[len(node.buffer):]
         output_chunks.append(missing_text)
         literal_ids = self.llm.encode(missing_text)[0].tolist()
@@ -59,6 +64,7 @@ class ConstrainedDecoder(BaseModel):
             pending_ids: list[int],
             output_chunks: list[str],
             past_key_values: Any) -> tuple[State, Any]:
+        """Choose one permitted token and advance the parse state."""
         token_id, token_text, past_key_values = self._choose_token(
             pending_ids, node, past_key_values)
         pending_ids.clear()
@@ -76,6 +82,7 @@ class ConstrainedDecoder(BaseModel):
             pending_ids: list[int],
             node: State,
             past_key_values: Any) -> tuple[int, str, Any]:
+        """Select only candidate IDs approved by the current state."""
         candidates = node.get_valid_tokens(self.vocab_index)
         if not candidates:
             raise ValueError(
@@ -98,6 +105,7 @@ class ConstrainedDecoder(BaseModel):
 
     @staticmethod
     def _drive_transitions(node: State, token_text: str) -> tuple[State, str]:
+        """Feed token text through states until it is consumed or terminal."""
         remaining = token_text
 
         while remaining and not isinstance(node, StateTerminal):

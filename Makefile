@@ -36,10 +36,15 @@ debug: install
 	@echo "Starting debug mode..."
 	$(PYTHON) -m pdb $(MAIN) $(ARGS)
 
+test: install
+	@echo "Running unit tests..."
+	$(PYTHON) -m unittest discover -s tests -v
+
 lint:
 	@echo "Running standard linting..."
-	uv run flake8 $(SRC)
-	uv run mypy $(SRC)
+	uv run flake8 .
+	uv run mypy . --warn-return-any --warn-unused-ignores \
+		--ignore-missing-imports --disallow-untyped-defs --check-untyped-defs
 
 lint-strict:
 	@echo "Running strict linting..."
@@ -59,4 +64,4 @@ clean:
 	       data/output
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 
-.PHONY: all install build run debug lint lint-strict clean profile
+.PHONY: all install build run debug test lint lint-strict clean profile

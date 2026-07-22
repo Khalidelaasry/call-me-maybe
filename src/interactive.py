@@ -1,3 +1,5 @@
+"""Optional interactive front end for manually testing function calls."""
+
 import argparse
 import json
 import sys
@@ -13,6 +15,7 @@ _EXIT_WORDS = {"exit", "quit"}
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse the optional function-definition path."""
     parser = argparse.ArgumentParser(
         description="Interactively test function-calling prompt by prompt."
     )
@@ -26,6 +29,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_functions(path: Path) -> list[FunctionDefinition]:
+    """Load function definitions or exit with a clear path error."""
     if not path.exists():
         sys.exit(f"Critical Error: File '{path}' not found.")
     return load_json_array(path, FunctionDefinition)
@@ -35,6 +39,7 @@ def _generate_for_prompt(
         user_prompt: str,
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> None:
+    """Generate, validate, and print one interactive function call."""
     try:
         generator = TwoStepJsonGenerator(
             user_prompt=user_prompt,
@@ -54,6 +59,7 @@ def _generate_for_prompt(
 def _run_repl(
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> None:
+    """Read prompts until the user exits or closes standard input."""
     print("Type a prompt and press Enter.")
     print("Type 'exit', 'quit', or press Ctrl+D to stop.\n")
 
@@ -75,6 +81,7 @@ def _run_repl(
 
 
 def main() -> None:
+    """Start the interactive command-line interface."""
     try:
         args = _parse_args()
         functions_def = _load_functions(args.functions_definition)

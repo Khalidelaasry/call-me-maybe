@@ -1,3 +1,5 @@
+"""Finite-state JSON parser used to constrain each generated token."""
+
 import re
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +17,7 @@ _NUMBER_DELIMITERS = ',}]\n'
 
 
 def is_partial_json_string_content(candidate: str) -> bool:
+    """Return whether text can still become valid JSON string content."""
     index = 0
     while index < len(candidate):
         character = candidate[index]
@@ -48,6 +51,7 @@ def is_partial_json_string_content(candidate: str) -> bool:
 
 
 def is_complete_json_string_content(candidate: str) -> bool:
+    """Return whether text is valid, complete JSON string content."""
     index = 0
     while index < len(candidate):
         character = candidate[index]
@@ -76,10 +80,12 @@ def is_complete_json_string_content(candidate: str) -> bool:
 
 
 def is_partial_json_number(candidate: str) -> bool:
+    """Return whether text can still become a valid JSON number."""
     return _PARTIAL_NUMBER_RE.fullmatch(candidate) is not None
 
 
 def split_complete_json_number(candidate: str) -> tuple[str, str]:
+    """Split a complete number prefix from any following token text."""
     match = _COMPLETE_NUMBER_PREFIX_RE.match(candidate)
     if match is None:
         return "", candidate
@@ -88,37 +94,46 @@ def split_complete_json_number(candidate: str) -> tuple[str, str]:
 
 
 class State(BaseModel, ABC):
+    """Base interface for states that accept constrained token text."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     buffer: str = Field(default="")
 
     @abstractmethod
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return IDs that can be emitted without invalidating this state."""
         raise NotImplementedError
 
     @abstractmethod
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Consume token text and return the next state plus overflow text."""
         raise NotImplementedError
 
 
 class StateTerminal(State):
+    """Represent successful completion of the constrained output."""
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return no candidates because generation is complete."""
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Ignore all input after terminal completion."""
         return self, ""
 
 
 class StateExpectLiteral(State):
+    """Represent a JSON literal written directly by the decoder."""
 
     expected: str = Field(...)
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return no candidates because literals are flushed directly."""
         return set()
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Advance after the expected literal has been fully consumed."""
         self.buffer += token_str
 
         if not self.buffer.startswith(self.expected):
@@ -129,10 +144,12 @@ class StateExpectLiteral(State):
 
 
 class StateBranch(State):
+    """Constrain output to one of several fixed literal choices."""
 
     choices: dict[str, State] = Field(...)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return IDs that can extend at least one possible branch."""
         valid_ids: set[int] = set()
 
         for candidate in self.choices:
@@ -145,6 +162,7 @@ class StateBranch(State):
         return valid_ids
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Advance when a branch has been completed by emitted text."""
         self.buffer += token_str
 
         for candidate, target_state in self.choices.items():
@@ -156,10 +174,12 @@ class StateBranch(State):
 
 
 class StateParseNumber(State):
+    """Constrain output to a syntactically valid JSON number."""
 
     next_state: State | None = Field(default=None)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return numeric IDs that preserve JSON-number validity."""
         following_literal = getattr(self.next_state, 'expected', '')
 
         return {
@@ -171,6 +191,7 @@ class StateParseNumber(State):
 
     def _keeps_number_valid(
             self, token_str: str, following_literal: str) -> bool:
+        """Check that one candidate preserves the number and next literal."""
         candidate = self.buffer + token_str
 
         if is_partial_json_number(candidate):
@@ -183,6 +204,7 @@ class StateParseNumber(State):
         return not trailing or following_literal.startswith(trailing)
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Advance once a complete number is followed by a JSON delimiter."""
         self.buffer += token_str
         number_text, trailing = split_complete_json_number(self.buffer)
 
@@ -195,11 +217,13 @@ class StateParseNumber(State):
 
 
 class StateParseString(State):
+    """Constrain output to a quoted JSON string with valid escaping."""
 
     next_state: State | None = Field(default=None)
     has_opened: bool = Field(default=False)
 
     def get_valid_tokens(self, vocab_index: VocabIndex) -> set[int]:
+        """Return quote or content IDs that preserve JSON-string validity."""
         if not self.has_opened:
             return vocab_index.filter_vocab.exact_quote_tokens
 
@@ -217,6 +241,7 @@ class StateParseString(State):
         return valid_content
 
     def transition(self, token_str: str) -> tuple["State", str]:
+        """Track opening and closing quotes, then pass overflow onward."""
         if not self.has_opened:
             self.has_opened = token_str == '"'
             return self, ""
@@ -230,6 +255,7 @@ class StateParseString(State):
         return self.next_state or StateTerminal(), combined[closing_index + 1:]
 
     def _can_close_with(self, token_str: str) -> bool:
+        """Return whether a candidate closes a valid string at this point."""
         combined = self.buffer + token_str
         closing_index = self._closing_quote_index(combined)
         if closing_index is None:
@@ -245,6 +271,7 @@ class StateParseString(State):
 
     @staticmethod
     def _closing_quote_index(text: str) -> int | None:
+        """Return the first unescaped quote index, if one exists."""
         escaped = False
         for index, character in enumerate(text):
             if escaped:
