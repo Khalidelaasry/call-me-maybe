@@ -17,17 +17,10 @@ _NUMERIC_PARAMETER_TYPES = ("number", "integer")
 
 
 class GenerationJsonError(Exception):
-    """Raised when constrained generation cannot produce valid JSON output."""
+    pass
 
 
 class TwoStepJsonGenerator(BaseModel):
-    """Generate function-calling JSON in two constrained decoding phases.
-
-    Attributes:
-        user_prompt: Natural-language user request to transform.
-        functions_definition: Available callable function schemas.
-        assistant: Constrained decoder used for token-by-token generation.
-    """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
     user_prompt: str
@@ -35,16 +28,6 @@ class TwoStepJsonGenerator(BaseModel):
     assistant: ConstrainedDecoder
 
     def generate(self) -> dict[str, Any]:
-        """Generate the final function call object for the user prompt.
-
-        Returns:
-            dict[str, Any]: Dictionary with prompt, name, and parameters
-            fields.
-
-        Raises:
-            GenerationJsonError: If generated function selection or parameters
-                cannot be mapped to a known, valid JSON output.
-        """
         function_name = self._select_function_name()
         function_schema = self._lookup_function(function_name)
         arguments = self._extract_arguments(function_schema)
@@ -55,14 +38,8 @@ class TwoStepJsonGenerator(BaseModel):
             "parameters": arguments,
         }
 
-    # -- Phase 1: choosing which function to call -----------------------
 
     def _select_function_name(self) -> str:
-        """Generate the function name that best matches the prompt.
-
-        Returns:
-            str: Selected function name constrained to known choices.
-        """
         return self.assistant.generate(
             prompt=self._function_selection_prompt(),
             state=self._function_selection_state(),
@@ -70,11 +47,6 @@ class TwoStepJsonGenerator(BaseModel):
         )
 
     def _function_selection_prompt(self) -> str:
-        """Build the system prompt used to select one function name.
-
-        Returns:
-            str: Prompt that lists all candidate functions and user input.
-        """
         header = "<|im_start|>system\nChoose the exact function name.\n" \
                  "Functions:\n"
         listing = "".join(
@@ -88,33 +60,13 @@ class TwoStepJsonGenerator(BaseModel):
         return header + listing + footer
 
     def _function_selection_state(self) -> State:
-        """Create a branching state machine constrained to known names.
-
-        Returns:
-            State: Branch state where each key is a possible function name.
-        """
         return StateBranch(choices={
             fn.name: StateTerminal() for fn in self.functions_definition
         })
 
-    # -- Phase 2: extracting the arguments for that function -------------
 
     def _extract_arguments(
             self, function_schema: FunctionDefinition) -> dict[str, Any]:
-        """Generate and normalize JSON parameters for a target function.
-
-        Args:
-            function_schema: Function schema whose parameters must be
-                extracted.
-
-        Returns:
-            dict[str, Any]: Parsed parameters converted to expected numeric
-            types where applicable.
-
-        Raises:
-            GenerationJsonError: If the generated parameter text is not valid
-                JSON object content.
-        """
         raw_json_text = self.assistant.generate(
             prompt=self._argument_extraction_prompt(function_schema),
             state=self._argument_extraction_state(function_schema),
@@ -126,14 +78,6 @@ class TwoStepJsonGenerator(BaseModel):
 
     def _argument_extraction_prompt(
             self, function_schema: FunctionDefinition) -> str:
-        """Build a prompt that asks for literal parameter extraction only.
-
-        Args:
-            function_schema: Function schema describing required parameters.
-
-        Returns:
-            str: Instructional prompt for constrained parameter decoding.
-        """
         params_info = ", ".join(
             f"'{param_name}' ({param_schema.type})"
             for param_name, param_schema in function_schema.parameters.items()
@@ -161,16 +105,6 @@ class TwoStepJsonGenerator(BaseModel):
 
     def _argument_extraction_state(
             self, function_schema: FunctionDefinition) -> State:
-        """Build a deterministic state chain for parameter JSON emission.
-
-        Args:
-            function_schema: Function schema used to derive parameter
-                structure.
-
-        Returns:
-            State: Root state that enforces exact JSON layout and value
-            types.
-        """
         param_items = list(function_schema.parameters.items())
 
         if not param_items:
@@ -187,17 +121,6 @@ class TwoStepJsonGenerator(BaseModel):
             param_items: list[tuple[str, ParameterModel]],
             index: int,
             tail_state: State) -> State:
-        """Recursively assemble the literal/value chain for one parameter
-        and everything that follows it.
-
-        Args:
-            param_items: Ordered (name, schema) pairs for every parameter.
-            index: Position of the parameter currently being linked.
-            tail_state: State to reach once the whole object has closed.
-
-        Returns:
-            State: The literal state expecting this parameter's key prefix.
-        """
         param_name, param_schema = param_items[index]
 
         is_last = index + 1 == len(param_items)
@@ -217,33 +140,12 @@ class TwoStepJsonGenerator(BaseModel):
     @staticmethod
     def _value_state_for(
             param_schema: ParameterModel, next_state: State) -> State:
-        """Pick the value-parsing state that matches a parameter's type.
-
-        Args:
-            param_schema: Schema describing the expected value type.
-            next_state: State to continue with once the value is complete.
-
-        Returns:
-            State: A number or string parsing state, as appropriate.
-        """
         if param_schema.type in _NUMERIC_PARAMETER_TYPES:
             return StateParseNumber(next_state=next_state)
         return StateParseString(next_state=next_state)
 
-    # -- Shared helpers ----------------------------------------------------
 
     def _lookup_function(self, function_name: str) -> FunctionDefinition:
-        """Find a function schema by exact name.
-
-        Args:
-            function_name: Generated function identifier to resolve.
-
-        Returns:
-            FunctionDefinition: Matching function schema.
-
-        Raises:
-            GenerationJsonError: If the name is not present in definitions.
-        """
         for function_schema in self.functions_definition:
             if function_schema.name == function_name:
                 return function_schema
@@ -251,19 +153,6 @@ class TwoStepJsonGenerator(BaseModel):
 
     @staticmethod
     def _parse_json_object(json_text: str) -> dict[str, Any]:
-        """Parse generated parameter text into a JSON object.
-
-        Args:
-            json_text: Raw generated text expected to encode a JSON object.
-
-        Returns:
-            dict[str, Any]: Parsed JSON object dictionary, or an empty
-            dictionary if the text is empty or the payload is not a
-            dictionary.
-
-        Raises:
-            GenerationJsonError: If text is non-empty and not valid JSON.
-        """
         if not json_text.strip():
             return {}
 
@@ -278,17 +167,6 @@ class TwoStepJsonGenerator(BaseModel):
     def _coerce_numeric_arguments(
             arguments: dict[str, Any],
             function_schema: FunctionDefinition) -> dict[str, Any]:
-        """Convert numeric argument values to schema-expected Python types.
-
-        Args:
-            arguments: Parsed argument dictionary to normalize.
-            function_schema: Function schema containing expected parameter
-                types.
-
-        Returns:
-            dict[str, Any]: The same dictionary, with numeric-typed entries
-            converted in place.
-        """
         for param_name, param_schema in function_schema.parameters.items():
             if param_name not in arguments:
                 continue

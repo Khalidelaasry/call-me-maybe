@@ -1,17 +1,3 @@
-"""Interactive REPL for testing function-calling prompt by prompt.
-
-Unlike `python -m src`, which loads `function_calling_tests.json` and
-processes every prompt in one batch, this entry point loads the model once
-and then lets you type one prompt at a time, immediately printing the
-generated function call for each one. This is meant purely as a manual
-testing/demo tool; it does not replace or modify the required batch
-pipeline in `src/__main__.py`.
-
-Usage:
-    uv run python -m src.interactive
-    uv run python -m src.interactive \
-        --functions_definition data/input/functions_definition.json
-"""
 import argparse
 import json
 import sys
@@ -27,11 +13,6 @@ _EXIT_WORDS = {"exit", "quit"}
 
 
 def _parse_args() -> argparse.Namespace:
-    """Declare and parse the CLI for the interactive REPL.
-
-    Returns:
-        argparse.Namespace: Parsed CLI arguments with defaults applied.
-    """
     parser = argparse.ArgumentParser(
         description="Interactively test function-calling prompt by prompt."
     )
@@ -45,17 +26,6 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _load_functions(path: Path) -> list[FunctionDefinition]:
-    """Load and validate the function schema definitions from disk.
-
-    Args:
-        path: Path to the functions_definition JSON file.
-
-    Returns:
-        list[FunctionDefinition]: Validated function schemas.
-
-    Raises:
-        SystemExit: If the file is missing or fails validation.
-    """
     if not path.exists():
         sys.exit(f"Critical Error: File '{path}' not found.")
     return load_json_array(path, FunctionDefinition)
@@ -65,13 +35,6 @@ def _generate_for_prompt(
         user_prompt: str,
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> None:
-    """Run one prompt through the pipeline and print the result.
-
-    Args:
-        user_prompt: Natural-language prompt typed by the user.
-        functions_def: Available function schema definitions.
-        assistant: Constrained decoder used for JSON generation.
-    """
     try:
         generator = TwoStepJsonGenerator(
             user_prompt=user_prompt,
@@ -91,12 +54,6 @@ def _generate_for_prompt(
 def _run_repl(
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> None:
-    """Read prompts from stdin one at a time until the user stops.
-
-    Args:
-        functions_def: Available function schema definitions.
-        assistant: Constrained decoder used for JSON generation.
-    """
     print("Type a prompt and press Enter.")
     print("Type 'exit', 'quit', or press Ctrl+D to stop.\n")
 
@@ -118,7 +75,6 @@ def _run_repl(
 
 
 def main() -> None:
-    """Entry point: load functions, init the model once, then run the REPL."""
     try:
         args = _parse_args()
         functions_def = _load_functions(args.functions_definition)

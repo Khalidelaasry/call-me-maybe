@@ -16,14 +16,6 @@ from src.json_generator import TwoStepJsonGenerator, GenerationJsonError
 
 
 def init_ai() -> ConstrainedDecoder:
-    """Initialize the language model and build its vocabulary index.
-
-    Returns:
-        ConstrainedDecoder: Ready-to-use constrained decoding assistant.
-
-    Raises:
-        SystemExit: If model or vocabulary initialization fails.
-    """
     print("Initializing the LLM model and vocabulary...")
     try:
         model = Small_LLM_Model()
@@ -38,16 +30,6 @@ def process_all_prompts(
         calling_tests: list[FunctionCallingTest],
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> list[dict[str, Any]]:
-    """Generate validated function-call outputs for all provided prompts.
-
-    Args:
-        calling_tests: Prompt test cases to process.
-        functions_def: Available function schema definitions.
-        assistant: Constrained decoder used for JSON generation.
-
-    Returns:
-        list[dict[str, Any]]: Successfully validated generation results.
-    """
     results: list[dict[str, Any]] = []
 
     for test_case in calling_tests:
@@ -62,17 +44,6 @@ def _run_one_prompt(
         test_case: FunctionCallingTest,
         functions_def: list[FunctionDefinition],
         assistant: ConstrainedDecoder) -> dict[str, Any] | None:
-    """Run generation for a single prompt and report the outcome.
-
-    Args:
-        test_case: Prompt test case to process.
-        functions_def: Available function schema definitions.
-        assistant: Constrained decoder used for JSON generation.
-
-    Returns:
-        dict[str, Any] | None: The validated result payload, or None if
-        generation failed for this prompt.
-    """
     print(f"Processing: '{test_case.prompt}'...")
 
     try:
@@ -97,15 +68,6 @@ def _run_one_prompt(
 
 
 def save_results(results: list[dict[str, Any]], output_path: Path) -> None:
-    """Persist generated results to disk as formatted JSON.
-
-    Args:
-        results: Validated result payloads to serialize.
-        output_path: Destination file where output JSON is written.
-
-    Raises:
-        SystemExit: If writing the output file fails.
-    """
     if not results:
         print("\nNo results generated. File not saved.")
         return
