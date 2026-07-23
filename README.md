@@ -84,4 +84,4 @@ cat data/output/function_calling_results.json
 - [uv docs](https://docs.astral.sh/uv/)
 - [JSON specification](https://www.json.org/json-en.html)
 
-**AI usage:** Claude (Anthropic) was used to help explain constrained decoding concepts, review the state machine design, and draft docstrings. All code was reviewed and understood before use.
+**AI usage:** Claude (Anthropic) was used to help explain constrained decoding concepts, review the state machine design, and draft docstrings.
