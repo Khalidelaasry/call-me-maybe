@@ -32,8 +32,6 @@ uv run python -m src \
   --output data/output/function_calling_results.json
 ```
 
-> Make sure to copy the real `llm_sdk/` folder from your school into the project root before running.
-
 ## Algorithm Explanation
 
 The program generates JSON one token at a time. At each step:
